@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "415400501123",
+    "project_id": "voice-recorder-app-1bc41",
+    "storage_bucket": "voice-recorder-app-1bc41.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:415400501123:android:4cb8dd2b722e68abdaa0b6",
+        "android_client_info": {
+          "package_name": "com.example.voicerecorder"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCEEDHcGGX5OZr--9nWnjlFiGunvzZGJD8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
