@@ -11,13 +11,20 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.MediaPlayer;
 import android.media.MediaRecorder;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+
+import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.StorageReference;
+
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
 
-import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,12 +39,13 @@ public class MainActivity extends AppCompatActivity {
     private static final int MICROPHONE_PERMISSION_CODE = 200;
     private MediaRecorder mediaRecorder;
     private MediaPlayer mediaPlayer;
+    private DatabaseReference databaseReference;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        @SuppressLint({"MissingInflatedId", "LocalSuppress"}) Button go_button = findViewById(R.id.go_to_zapis);
+        Button go_button = findViewById(R.id.go_to_zapis);
         go_button.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -48,6 +56,8 @@ public class MainActivity extends AppCompatActivity {
         if (isMicrophonePresent()) {
             getMicrophonePermission();
         }
+
+        databaseReference = FirebaseDatabase.getInstance().getReference("recordings");
     }
 
     public void btnRecordPressed(View view) {
@@ -73,9 +83,7 @@ public class MainActivity extends AppCompatActivity {
             mediaRecorder = null;
 
             Toast.makeText(this, "Recording is stopped", Toast.LENGTH_LONG).show();
-
-            // Save recording to Firestore
-            saveRecordingToFirestore("testRecordingFiles", getRecordingFilePath());
+            saveRecordingToDatabase("testRecordingFiles", getRecordingFilePath());
         } else {
             Toast.makeText(this, "No recording to stop", Toast.LENGTH_LONG).show();
         }
@@ -107,14 +115,11 @@ public class MainActivity extends AppCompatActivity {
 
     private String getRecordingFilePath() {
         ContextWrapper contextWrapper = new ContextWrapper(getApplicationContext());
-        File musicDirectory = contextWrapper.getExternalFilesDir(Environment.DIRECTORY_MUSIC);
-        if (musicDirectory == null) {
-            musicDirectory = new File(contextWrapper.getExternalFilesDir(null), "Music");
-            musicDirectory.mkdirs(); // Создаем директорию, если ее нет
-        }
+        File storageDirectory = new File(contextWrapper.getExternalFilesDir(null), "Storage/Recordings");
+        storageDirectory.mkdirs(); // Создаем директорию, если ее нет
 
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-        File file = new File(musicDirectory, "recording_" + timeStamp + ".mp3");
+        File file = new File(storageDirectory, "recording_" + timeStamp + ".mp3");
 
         // Проверяем существование файла
         if (!file.exists()) {
@@ -128,22 +133,51 @@ public class MainActivity extends AppCompatActivity {
         return file.getPath();
     }
 
-    private void saveRecordingToFirestore(String fileName, String filePath) {
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
+    private void saveRecordingToDatabase(String fileName, String filePath) {
+        StorageReference storageRef = FirebaseStorage.getInstance().getReference().child("Recordings/" + fileName);
 
-        // Create a new recording
-        Map<String, Object> recording = new HashMap<>();
-        recording.put("name", fileName);
-        recording.put("filePath", filePath);
-
-        // Add a new document with a generated ID
-        db.collection("recordings")
-                .add(recording)
-                .addOnSuccessListener(documentReference -> Toast.makeText(MainActivity.this, "Recording saved to Firestore", Toast.LENGTH_SHORT).show())
-                .addOnFailureListener(e -> Toast.makeText(MainActivity.this, "Error saving recording to Firestore", Toast.LENGTH_SHORT).show());
+        storageRef.putFile(Uri.fromFile(new File(filePath)))
+                .addOnSuccessListener(taskSnapshot -> {
+                    // Запись успешно загружена
+                    storageRef.getDownloadUrl().addOnSuccessListener(uri -> {
+                        String downloadUrl = uri.toString();
+                        Log.d("RecordingsActivity", "File uploaded successfully. Download URL: " + downloadUrl);
+                        // Теперь вы можете сохранить downloadUrl в базу данных Firebase Realtime Database или Firestore
+                        saveRecordingToRealtimeDatabase(fileName, downloadUrl);
+                    });
+                })
+                .addOnFailureListener(exception -> {
+                    // Обработка ошибки при загрузке записи
+                    Log.e("RecordingsActivity", "Failed to upload file", exception);
+                });
     }
+
+    private void saveRecordingToRealtimeDatabase(String fileName, String downloadUrl) {
+        DatabaseReference recordingsRef = FirebaseDatabase.getInstance().getReference().child("recordings");
+        String recordingId = recordingsRef.push().getKey();
+
+        Map<String, Object> recordingData = new HashMap<>();
+        recordingData.put("name", fileName);
+        recordingData.put("downloadUrl", downloadUrl);
+
+        if (recordingId != null) {
+            recordingsRef.child(recordingId).setValue(recordingData)
+                    .addOnSuccessListener(aVoid -> {
+                        // Запись успешно сохранена в Realtime Database
+                        Log.d("RecordingsActivity", "Recording saved to Realtime Database");
+                    })
+                    .addOnFailureListener(e -> {
+                        // Обработка ошибки при сохранении записи в Realtime Database
+                        Log.e("RecordingsActivity", "Failed to save recording to Realtime Database", e);
+                    });
+        }
+    }
+
+
+
+
     public void openRecordingsActivity(View view) {
         Intent intent = new Intent(this, RecordingsActivity.class);
-        startActivityForResult(intent, 1);
+        startActivity(intent);
     }
 }
